@@ -5,31 +5,43 @@ import passport from "passport";
 import { Strategy as JwtStrategy, ExtractJwt } from "passport-jwt";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
+// ==================== Setup Paths ====================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ==================== Config ====================
 dotenv.config();
 
 const app = express();
+
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:5173"],
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      process.env.CLIENT_URL, // e.g., your frontend Render domain
+    ],
     credentials: true,
   })
 );
 app.use(express.json());
 app.use(passport.initialize());
 
-// Load env variables
+// ==================== Environment Variables ====================
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/todoapp";
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret"; 
+const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret";
 const PORT = process.env.PORT || 5000;
 
-// Connect DB
+// ==================== MongoDB Connection ====================
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log(" MongoDB connected"))
-  .catch((e) => console.log(" DB Error:", e));
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((e) => console.log("❌ DB Error:", e));
 
-// Models
+// ==================== Models ====================
 const userSchema = new mongoose.Schema({
   email: { type: String, unique: true },
   password: String,
@@ -51,7 +63,7 @@ const todoSchema = new mongoose.Schema({
 });
 const Todo = mongoose.model("Todo", todoSchema);
 
-// JWT Strategy
+// ==================== JWT Strategy ====================
 const opts = {
   jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
   secretOrKey: JWT_SECRET,
@@ -69,9 +81,7 @@ passport.use(
   })
 );
 
-// Middleware
 const requireAuth = passport.authenticate("jwt", { session: false });
-
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== "admin") {
     return res.status(403).json({ message: "Access denied: Admins only" });
@@ -79,7 +89,8 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// ================= AUTH =================
+// ==================== AUTH ROUTES ====================
+
 // Register
 app.post("/api/register", async (req, res) => {
   const { email, password, role } = req.body;
@@ -102,9 +113,8 @@ app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
-    if (!user || user.password !== password) {
+    if (!user || user.password !== password)
       return res.status(400).json({ message: "Invalid credentials" });
-    }
 
     const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, {
       expiresIn: "1h",
@@ -116,7 +126,8 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// ================= TODOS =================
+// ==================== TODO ROUTES ====================
+
 // Create Todo
 app.post("/api/todos", requireAuth, async (req, res) => {
   try {
@@ -141,7 +152,7 @@ app.get("/api/todos/:userEmail", requireAuth, async (req, res) => {
   }
 });
 
-// Get all todos (admin only)
+// Get All Todos (admin)
 app.get("/api/todos", requireAuth, requireAdmin, async (req, res) => {
   try {
     const todos = await Todo.find();
@@ -175,7 +186,8 @@ app.delete("/api/todos/:id", requireAuth, async (req, res) => {
   }
 });
 
-// ================= USERS =================
+// ==================== USER ROUTES ====================
+
 // Get all users (admin)
 app.get("/api/users", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -282,27 +294,12 @@ app.put("/api/todos/updateEmail", requireAuth, requireAdmin, async (req, res) =>
   }
 });
 
-// ================= SERVER =================
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ==================== SERVE FRONTEND (VITE) ====================
+app.use(express.static(path.join(__dirname, "/client/dist")));
 
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "/client/dist", "index.html"));
+});
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ==================== START SERVER ====================
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
